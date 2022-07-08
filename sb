@@ -1,0 +1,238 @@
+#!/usr/bin/env bash
+# Author: Alex Kirk
+# Adds the specified host with $IP to the $HOSTS file and allows to activate or deactivate it.
+# To be able to use this without sudo, make the hosts file writable by your user.
+# Example for macOS: change the group of the file to staff like this: sudo chgrp staff /etc/hosts
+
+HOSTS="/etc/hosts"
+[ "$IP" == "" ] && IP="sa.nd.box.ip"
+
+usage() {
+	cat << END
+Usage $(basename $0) [option] <host> ...
+
+	<host>             toggle specified host (set to $IP)
+	add <host> <ip>    add the specified host (set to $IP or to <ip>)
+	rm <host>          remove the specified host
+
+	activate <host>    activate (or add) the specified host (set to $IP)
+	deactivate <host>  deactivate specified host
+
+You can use paritial hostnames to match multiple entries.
+END
+	exit
+}
+
+run_checks() {
+	ip_check
+	root_check
+}
+
+ip_check() {
+	if [ "$IP" == "sa.nd.box.ip" ];then
+		echo "Please edit this file "$0" and change the IP address to your sandbox IP."
+		exit 1
+	fi
+}
+
+root_check() {
+	if [ ! -w "$HOSTS" ];then
+		echo "Please sudo this command or change the permissions of $HOSTS."
+		exit 1
+	fi
+}
+
+mktemp() {
+	local filename="/tmp/sb-${RANDOM}"
+	touch "$filename"
+	echo "${filename}"
+}
+
+toggle() {
+	local pattern=${1/./\\.}
+
+	if grep " ${pattern}$" "${HOSTS}" > /dev/null; then
+		pattern=" ${pattern}$"
+	fi
+
+	if grep "^#" "${HOSTS}" | grep "${pattern}" > /dev/null; then
+		activate "$1"
+	elif grep -v "^#" "${HOSTS}" | grep "${pattern}" > /dev/null; then
+		deactivate "$1"
+	else
+		read -p "$1 does not exist. Shall we point it to $IP (y/n)? " choice
+		case "$choice" in
+			y|Y ) activate "$1";;
+			*)    echo "Ok, doing nothing.";;
+		esac
+	fi
+}
+
+status() {
+	echo -n "$1: "
+	local count=`echo "$2" | wc -l`
+	if [[ $count -gt 1 ]]; then
+		echo $count hosts
+	fi
+	echo "$2"
+}
+
+activate() {
+	run_checks
+	local pattern=${1/./\\.}
+
+	if grep "^#" "${HOSTS}" | grep " ${pattern}$" > /dev/null; then
+		pattern=" ${pattern}$"
+	fi
+
+	if grep "^#" "${HOSTS}" | grep "${pattern}" > /dev/null; then
+		local tmpfile=$( mktemp )
+		local host=$( grep "^#" "${HOSTS}" | grep "[0-9]" | grep "${pattern}" | sed 's/^\(#\)\{1,\} *//' )
+
+		# Remove # from the respective host.
+		awk "/^#.*$pattern/ { sub( /^(#)+ */, "'""'" ) } (! /^#.*$pattern/ ) { print \$0 }" "${HOSTS}" > "${tmpfile}" || exit 1
+
+		# Use cp and rm instead of mv in order to re-use permissions.
+		cp "${tmpfile}" "${HOSTS}"
+		rm -f "${tmpfile}"
+
+		status "activated" "$host"
+	elif grep -v "^#" "${HOSTS}" | grep "[0-9]" | grep "${pattern}"  > /dev/null; then
+		local host=$( grep "${pattern}" "${HOSTS}" )
+		status "already active" "$host"
+	else
+		echo "${IP}" "$1" >> "${HOSTS}"
+		status "added" "${IP} $1 (${DESC})"
+	fi
+}
+
+add() {
+	local pattern=${1/./\\.}
+	local new_ip="$IP"
+
+	if [ "$2" ]; then
+		if [ -z "$(echo "$2" | sed 's/^\(# *\)*\([0-9]\{1,3\}\.\)\{3\}[0-9]\{1,3\}//')" ]; then
+			new_ip="$2"
+		else
+			echo "Invalid IP format: $2"
+			exit 1
+		fi
+	fi
+
+	run_checks
+	if grep "${new_ip} ${pattern}$" "${HOSTS}" > /dev/null; then
+		local host=$( grep " ${pattern}$" "${HOSTS}" )
+		status "already exists" "$host"
+	elif grep "${pattern}$" "${HOSTS}" > /dev/null; then
+		remove "$1"
+		echo "${new_ip}" "$1" >> "${HOSTS}"
+		status "re-added" "${new_ip} $1"
+	else
+		echo "${new_ip}" "$1" >> "${HOSTS}"
+		status "added" "${new_ip} $1 (${DESC})"
+	fi
+}
+
+deactivate() {
+	run_checks
+	local pattern=${1/./\\.}
+
+	if grep " ${pattern}$" "${HOSTS}" | grep -v "^#" > /dev/null; then
+		pattern=" ${pattern}$"
+	fi
+
+	if grep "${pattern}" "${HOSTS}" | grep -v "^#" > /dev/null; then
+		local tmpfile=$( mktemp )
+		local host=$( grep "${pattern}" "${HOSTS}" | grep -v "^#" )
+
+		# Add # to the respective host.
+		awk "/$pattern/ { sub( /^(# *)+/, "'""'" ); print "'"# "'" \$0;  } (! /$pattern/ ) { print \$0 }" "${HOSTS}" > "${tmpfile}" || exit 1
+
+		# Use cp and rm instead of mv in order to re-use permissions.
+		cp "${tmpfile}" "${HOSTS}"
+		rm -f "${tmpfile}"
+
+		status "deactivated" "$host"
+	elif grep "^#" "${HOSTS}" | grep "${pattern}"  > /dev/null; then
+		local host=$( grep "^#" "${HOSTS}" | grep "${pattern}" | sed 's/^# *//g' )
+		status "not active" "$host"
+	else
+		status "unknown" "$1"
+	fi
+}
+
+remove() {
+	run_checks
+	local pattern=${1/./\\.}
+
+	if  grep "\b${pattern}\b" "${HOSTS}" > /dev/null; then
+		local tmpfile=$( mktemp )
+		local host=$( grep "\b${pattern}\b" "${HOSTS}" | sed 's/^\(#\)\{1,\} *//' )
+
+		# Remove respective host.
+		grep -v "\b${pattern}\b" "${HOSTS}" > "${tmpfile}"
+
+		# Use cp and rm instead of mv in order to re-use permissions.
+		cp "${tmpfile}" "${HOSTS}"
+		rm -f "${tmpfile}"
+
+		status "removed" "$host"
+	else
+		status "unknown" "$1"
+	fi
+}
+
+list() {
+	list-active
+	echo
+	list-inactive
+}
+
+list-all-completion() {
+	grep "$IP" "$HOSTS" | sed 's/^\(# *\)*\([0-9]\{1,3\}\.\)\{3\}[0-9]\{1,3\} //' | sort | uniq
+}
+
+list-active-completion() {
+	grep "$IP" "$HOSTS" | grep -v "^#" | sed 's/^\([0-9]\{1,3\}\.\)\{3\}[0-9]\{1,3\} //' | sort | uniq
+}
+
+list-inactive-completion() {
+	grep "# $IP" "$HOSTS" | sed 's/^\(# *\)\{1,\}\([0-9]\{1,3\}\.\)\{3\}[0-9]\{1,3\} //' | sort | uniq
+}
+
+list-active() {
+	local active=$( grep "$IP" "$HOSTS" | grep -v "^#" | sed 's/^\([0-9]\{1,3\}\.\)\{3\}[0-9]\{1,3\} //'  | sort | uniq )
+	[ "$active" ] && echo "Active hosts" && echo "============" && echo "$active" && return 0
+	echo "No hosts currently sandboxed."
+	return 1
+}
+
+list-inactive() {
+	local inactive=$( grep "# $IP" "$HOSTS" | sed 's/^\(# *\)\{1,\}\([0-9]\{1,3\}\.\)\{3\}[0-9]\{1,3\} //' | sort | uniq)
+	[ "$inactive" ] && echo "Inactive hosts" && echo "==============" && echo "$inactive"
+}
+
+ip_check
+case "$1" in
+	deactivate)
+		[ "$2" ] || usage
+		deactivate "$2";;
+	activate)
+		[ "$2" ] || usage
+		activate "$2";;
+	add)
+		[ "$2" ] || usage
+		add "$2" "$3";;
+	rm)
+		[ "$2" ] || usage
+		remove "$2";;
+	list | list-active | list-inactive | list-all-completion | list-active-completion | list-inactive-completion)
+		$1;;
+	--help)
+		usage;;
+	"")
+		list-active || usage;;
+	*)
+		[ "$1" ] || usage
+		toggle "$1";;
+esac
