@@ -6,7 +6,7 @@ Utility to quickly sandbox and unsandbox a host.
 ```
 ~ ❯ sb
 No hosts currently sandboxed.
-Usage sb [option] <host> ...
+Usage sb <command> <host> ...
 
 	<host>             toggle specified host (set to 1.2.3.4)
 	add <host> <ip>    add the specified host (set to 1.2.3.4 or to <ip>)
