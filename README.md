@@ -18,7 +18,7 @@ Usage sb [option] <host> ...
 You can use paritial hostnames to match multiple entries.
 ~ ❯ sb demo
 demo does not exist. Shall we point it to 1.2.3.4 (y/n)? y
-added: 1.2.3.4 demo ()
+added: 1.2.3.4 demo
 ~ ❯ sb
 Active hosts
 ============
