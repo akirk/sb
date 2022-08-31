@@ -3,9 +3,12 @@
 # Adds the specified host with $IP to the $HOSTS file and allows to activate or deactivate it.
 # To be able to use this without sudo, make the hosts file writable by your user.
 # Example for macOS: change the group of the file to staff like this: sudo chgrp staff /etc/hosts
+# and make it group writable: sudo chmod g+w /etc/hosts
 
 HOSTS="/etc/hosts"
 [ "$IP" == "" ] && IP="sa.nd.box.ip"
+# Optionally add multiple IPs like this, when adding the first one will be used
+# IP="sand.box.1.ip|sand.box.2.ip"
 
 usage() {
 	cat << END
@@ -60,7 +63,7 @@ toggle() {
 	elif grep -v "^#" "${HOSTS}" | grep "${pattern}" > /dev/null; then
 		deactivate "$1"
 	else
-		read -p "$1 does not exist. Shall we point it to $IP (y/n)? " choice
+		read -p "$1 does not exist. Shall we point it to ${IP%|*} (y/n)? " choice
 		case "$choice" in
 			y|Y ) activate "$1";;
 			*)    echo "Ok, doing nothing.";;
@@ -108,7 +111,7 @@ activate() {
 
 add() {
 	local pattern=${1/./\\.}
-	local new_ip="$IP"
+	local new_ip="${IP%|*}"
 
 	if [ "$2" ]; then
 		if [ -z "$(echo "$2" | sed 's/^\(# *\)*\([0-9]\{1,3\}\.\)\{3\}[0-9]\{1,3\}//')" ]; then
@@ -189,26 +192,26 @@ list() {
 }
 
 list-all-completion() {
-	grep "$IP" "$HOSTS" | sed 's/^\(# *\)*\([0-9]\{1,3\}\.\)\{3\}[0-9]\{1,3\} //' | sort | uniq
+	grep -E "$IP" "$HOSTS" | sed 's/^\(# *\)*\([0-9]\{1,3\}\.\)\{3\}[0-9]\{1,3\} //' | sort | uniq
 }
 
 list-active-completion() {
-	grep "$IP" "$HOSTS" | grep -v "^#" | sed 's/^\([0-9]\{1,3\}\.\)\{3\}[0-9]\{1,3\} //' | sort | uniq
+	grep -E "$IP" "$HOSTS" | grep -v "^#" | sed 's/^\([0-9]\{1,3\}\.\)\{3\}[0-9]\{1,3\} //' | sort | uniq
 }
 
 list-inactive-completion() {
-	grep "# $IP" "$HOSTS" | sed 's/^\(# *\)\{1,\}\([0-9]\{1,3\}\.\)\{3\}[0-9]\{1,3\} //' | sort | uniq
+	grep -E "# $IP" "$HOSTS" | sed 's/^\(# *\)\{1,\}\([0-9]\{1,3\}\.\)\{3\}[0-9]\{1,3\} //' | sort | uniq
 }
 
 list-active() {
-	local active=$( grep "$IP" "$HOSTS" | grep -v "^#" | sed 's/^\([0-9]\{1,3\}\.\)\{3\}[0-9]\{1,3\} //'  | sort | uniq )
+	local active=$( grep -E "$IP" "$HOSTS" | grep -v "^#" | sed 's/^\([0-9]\{1,3\}\.\)\{3\}[0-9]\{1,3\} //'  | sort | uniq )
 	[ "$active" ] && echo "Active hosts" && echo "============" && echo "$active" && return 0
 	echo "No hosts currently sandboxed."
 	return 1
 }
 
 list-inactive() {
-	local inactive=$( grep "# $IP" "$HOSTS" | sed 's/^\(# *\)\{1,\}\([0-9]\{1,3\}\.\)\{3\}[0-9]\{1,3\} //' | sort | uniq)
+	local inactive=$( grep -E "# $IP" "$HOSTS" | sed 's/^\(# *\)\{1,\}\([0-9]\{1,3\}\.\)\{3\}[0-9]\{1,3\} //' | sort | uniq)
 	[ "$inactive" ] && echo "Inactive hosts" && echo "==============" && echo "$inactive"
 }
 
@@ -228,7 +231,7 @@ case "$1" in
 		remove "$2";;
 	list | list-active | list-inactive | list-all-completion | list-active-completion | list-inactive-completion)
 		$1;;
-	--help)
+	help | --help)
 		usage;;
 	"")
 		list-active || usage;;
