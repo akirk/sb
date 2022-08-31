@@ -9,7 +9,7 @@ HOSTS="/etc/hosts"
 
 usage() {
 	cat << END
-Usage $(basename $0) [option] <host> ...
+Usage $(basename $0) <command> <host> ...
 
 	<host>             toggle specified host (set to $IP)
 	add <host> <ip>    add the specified host (set to $IP or to <ip>)
@@ -102,7 +102,7 @@ activate() {
 		status "already active" "$host"
 	else
 		echo "${IP}" "$1" >> "${HOSTS}"
-		status "added" "${IP} $1 (${DESC})"
+		status "added" "${IP} $1"
 	fi
 }
 
@@ -129,7 +129,7 @@ add() {
 		status "re-added" "${new_ip} $1"
 	else
 		echo "${new_ip}" "$1" >> "${HOSTS}"
-		status "added" "${new_ip} $1 (${DESC})"
+		status "added" "${new_ip} $1"
 	fi
 }
 
