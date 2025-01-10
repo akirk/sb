@@ -50,3 +50,32 @@ Active hosts
 demo
 ~ ❯ 
 ```
+
+# Autocomplete
+
+You can add this to your ``.zshrc` file to get autocompletion support in ZSH:
+
+```zsh
+_sbc() {
+	local -a _descriptions _values hosts=() inactive_hosts=() hostname
+	hosts=($(awk '/^([0-9]{1,3})[.]([0-9]{1,3})[.]([0-9]{1,3})[.]([0-9]{1,3}) *([^ ]+)/ {print $2 "_" $3}' /etc/hosts))
+	inactive_hosts=($(awk '/^# *([0-9]{1,3})[.]([0-9]{1,3})[.]([0-9]{1,3})[.]([0-9]{1,3}) *([^ ]+)/ {print $3 "_" $4}' /etc/hosts))
+
+	for host in "${inactive_hosts[@]}"; do
+		hostname=$(echo $host | cut -d_ -f1)
+		_values+=("$hostname")
+		host=$(echo "$host" | tr _ ' ')
+		_descriptions+=($'\033[31m'$host$'\033[0m-- disabled')
+	done
+
+	for host in "${hosts[@]}"; do
+		hostname=$(echo $host | cut -d_ -f1)
+		_values+=("$hostname")
+		host=$(echo "$host" | tr _ ' ')
+		_descriptions+=($'\033[32m'$host$'\033[0m-- enabled')
+	done
+
+	compadd -l -d _descriptions -a _values
+}
+compdef _sbc sb
+```
