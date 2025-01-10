@@ -5,14 +5,23 @@
 # Example for macOS: change the group of the file to staff like this: sudo chgrp staff /etc/hosts
 # and make it group writable: sudo chmod g+w /etc/hosts
 
+#!/usr/bin/env bash
+
+set -o errexit
+set -o nounset
+set -o pipefail
+if [[ "${TRACE-0}" == "1" ]]; then
+    set -o xtrace
+fi
+
 HOSTS="/etc/hosts"
-[ "$IP" == "" ] && IP="sa.nd.box.ip"
+[ "${IP-}" == "" ] && IP="$SANDBOX_IP"
 # Optionally add multiple IPs like this, when adding the first one will be used
-# IP="sand.box.1.ip|sand.box.2.ip"
+# export SANDBOX_IP="sand.box.1.ip|sand.box.2.ip"
 
 usage() {
 	cat << END
-Usage $(basename $0) <command> <host> ...
+Usage $(basename "$0") <command> <host> ...
 
 	<host>             toggle specified host (set to $IP)
 	add <host> <ip>    add the specified host (set to $IP or to <ip>)
@@ -32,14 +41,14 @@ run_checks() {
 }
 
 ip_check() {
-	if [ "$IP" == "sa.nd.box.ip" ];then
-		echo "Please edit this file "$0" and change the IP address to your sandbox IP."
+	if [[ "${IP-}" == "" ]]; then
+		echo "Please set a default IP address via the \$SANDBOX_IP environment variable."
 		exit 1
 	fi
 }
 
 root_check() {
-	if [ ! -w "$HOSTS" ];then
+	if [[ ! -w "$HOSTS" ]];then
 		echo "Please sudo this command or change the permissions of $HOSTS."
 		exit 1
 	fi
@@ -73,24 +82,26 @@ toggle() {
 
 status() {
 	echo -n "$1: "
-	local count=`echo "$2" | wc -l`
+	local count
+	count=$(echo "$2" | wc -l)
 	if [[ $count -gt 1 ]]; then
-		echo $count hosts
+		echo "$count" hosts
 	fi
 	echo "$2"
 }
 
 activate() {
 	run_checks
-	local pattern=${1/./\\.}
+	local host pattern tmpfile
+	pattern=${1/./\\.}
 
 	if grep "^#" "${HOSTS}" | grep " ${pattern}$" > /dev/null; then
 		pattern=" ${pattern}$"
 	fi
 
 	if grep "^#" "${HOSTS}" | grep "${pattern}" > /dev/null; then
-		local tmpfile=$( mktemp )
-		local host=$( grep "^#" "${HOSTS}" | grep "[0-9]" | grep "${pattern}" | sed 's/^\(#\)\{1,\} *//' )
+		tmpfile=$( mktemp )
+		host=$( grep "^#" "${HOSTS}" | grep "[0-9]" | grep "${pattern}" | sed 's/^\(#\)\{1,\} *//' )
 
 		# Remove # from the respective host.
 		awk "/^#.*$pattern/ { sub( /^(#)+ */, "'""'" ) } (! /^#.*$pattern/ ) { print \$0 }" "${HOSTS}" > "${tmpfile}" || exit 1
@@ -101,20 +112,21 @@ activate() {
 
 		status "activated" "$host"
 	elif grep -v "^#" "${HOSTS}" | grep "[0-9]" | grep "${pattern}"  > /dev/null; then
-		local host=$( grep "${pattern}" "${HOSTS}" )
+		host=$( grep "${pattern}" "${HOSTS}" )
 		status "already active" "$host"
 	else
-		echo "${IP}" "$1" >> "${HOSTS}"
-		status "added" "${IP} $1"
+		echo "${IP%|*}" "$1" >> "${HOSTS}"
+		status "added" "${IP%|*} $1"
 	fi
 }
 
 add() {
-	local pattern=${1/./\\.}
-	local new_ip="${IP%|*}"
+	local pattern new_ip host
+	pattern=${1/./\\.}
+	new_ip="${IP%|*}"
 
-	if [ "$2" ]; then
-		if [ -z "$(echo "$2" | sed 's/^\(# *\)*\([0-9]\{1,3\}\.\)\{3\}[0-9]\{1,3\}//')" ]; then
+	if [[ "${2-}" ]]; then
+		if [[ "${2-}" =~ ^(# *)*([0-9]{1,3})[.]([0-9]{1,3})[.]([0-9]{1,3})[.]([0-9]{1,3})$ ]]; then
 			new_ip="$2"
 		else
 			echo "Invalid IP format: $2"
@@ -124,7 +136,7 @@ add() {
 
 	run_checks
 	if grep "${new_ip} ${pattern}$" "${HOSTS}" > /dev/null; then
-		local host=$( grep " ${pattern}$" "${HOSTS}" )
+		host=$( grep " ${pattern}$" "${HOSTS}" )
 		status "already exists" "$host"
 	elif grep "${pattern}$" "${HOSTS}" > /dev/null; then
 		remove "$1"
@@ -216,7 +228,7 @@ list-inactive() {
 }
 
 ip_check
-case "$1" in
+case "${1-list-active}" in
 	deactivate)
 		[ "$2" ] || usage
 		deactivate "$2";;
@@ -230,8 +242,8 @@ case "$1" in
 		[ "$2" ] || usage
 		remove "$2";;
 	list | list-active | list-inactive | list-all-completion | list-active-completion | list-inactive-completion)
-		$1;;
-	help | --help)
+		${1-list-active};;
+	help | --help | -h)
 		usage;;
 	"")
 		list-active || usage;;
